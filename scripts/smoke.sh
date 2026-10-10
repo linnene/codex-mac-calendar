@@ -175,7 +175,7 @@ echo ""
 echo "== read-only =="
 run "status"                calendars_status
 check "access is ready"     "$TMP/last.json" "d['ready'] is True"
-check "version reported"    "$TMP/last.json" "d['bridge']['version'] == '0.1.0'"
+check "version reported"    "$TMP/last.json" "d['bridge']['version'] == '0.1.1'"
 run "list tools"            calendars_status
 run "list accounts"         calendars_list_accounts
 run "list calendars"        calendar_list_calendars
@@ -207,10 +207,26 @@ reject "unknown list is an error" \
 
 echo ""
 echo "== containers =="
-run "create calendar"  calendar_create_calendar --arg title="$CAL_NAME" --arg color=teal --arg account=Default --arg confirm=true
+# Prefer this machine's local account so the test never syncs anything to the
+# user's other devices; fall back to letting the bridge pick an account.
+LOCAL_ACCOUNT="$("$BIN" call calendars_list_accounts 2>/dev/null | python3 -c '
+import json, sys
+try:
+    accounts = json.load(sys.stdin).get("accounts", [])
+except Exception:
+    accounts = []
+local = [a["title"] for a in accounts if a.get("type") == "local"]
+print(local[0] if local else "")
+' 2>/dev/null || true)"
+
+if [[ -n "$LOCAL_ACCOUNT" ]]; then
+  run "create calendar" calendar_create_calendar --arg title="$CAL_NAME" --arg color=teal --arg account="$LOCAL_ACCOUNT" --arg confirm=true
+else
+  run "create calendar" calendar_create_calendar --arg title="$CAL_NAME" --arg color=teal --arg confirm=true
+fi
 CAL_ID="$(field "$TMP/last.json" container.id)"
 if [[ -z "$CAL_ID" ]]; then
-  run "create calendar (retry in iCloud)" calendar_create_calendar --arg title="$CAL_NAME" --arg color=teal --arg account=iCloud --arg confirm=true
+  run "create calendar (retry, bridge-chosen account)" calendar_create_calendar --arg title="$CAL_NAME" --arg color=teal --arg confirm=true
   CAL_ID="$(field "$TMP/last.json" container.id)"
 fi
 check "calendar has the chosen colour" "$TMP/last.json" "d['container']['colorHex'] == '#30B0C7'"
@@ -221,7 +237,7 @@ run "rename calendar"   calendar_update_calendar --arg id="$CAL_ID" --arg new_ti
 run "create reminder list" reminders_create_list --arg title="$LIST_NAME" --arg color=green --arg confirm=true
 LIST_ID="$(field "$TMP/last.json" container.id)"
 if [[ -z "$LIST_ID" ]]; then
-  run "create reminder list in iCloud" reminders_create_list --arg title="$LIST_NAME" --arg color=green --arg account=iCloud --arg confirm=true
+  run "create reminder list (retry with iCloud)" reminders_create_list --arg title="$LIST_NAME" --arg color=green --arg account=iCloud --arg confirm=true
   LIST_ID="$(field "$TMP/last.json" container.id)"
 fi
 check "list has the chosen colour" "$TMP/last.json" "d['container']['colorHex'] == '#34C759'"
@@ -244,12 +260,12 @@ run "list in calendar" calendar_list_events --arg calendar_id="$CAL_ID" --arg ra
 check "event is listed" "$TMP/last.json" "any(e['id'] == '$EVENT_ID' for e in d['events'])"
 
 run "quick add natural language" calendar_quick_add \
-  --arg calendar_id="$CAL_ID" --arg text="明天下午3点和张伟开会1小时" --arg timezone=Asia/Shanghai --arg confirm=true
+  --arg calendar_id="$CAL_ID" --arg text="明天下午3点和设计组评审1小时" --arg timezone=Asia/Shanghai --arg confirm=true
 check "duration parsed from text" "$TMP/last.json" "d['event']['durationMinutes'] == 60"
-check "title parsed from text"    "$TMP/last.json" "d['event']['title'] == '和张伟开会'"
+check "title parsed from text"    "$TMP/last.json" "d['event']['title'] == '和设计组评审'"
 QUICK_ID="$(field "$TMP/last.json" event.id)"
 
-run "update event" calendar_update_event --arg id="$QUICK_ID" --arg title="和张伟开会（改）" --arg duration_minutes=90 --arg confirm=true
+run "update event" calendar_update_event --arg id="$QUICK_ID" --arg title="和设计组评审（改）" --arg duration_minutes=90 --arg confirm=true
 check "duration updated" "$TMP/last.json" "d['after']['durationMinutes'] == 90"
 check "before/after reported" "$TMP/last.json" "d['before']['title'] != d['after']['title']"
 
@@ -331,8 +347,25 @@ echo ""
 echo "== blocked operations =="
 reject "refuse non-empty calendar delete" \
   calendar_delete_calendar --arg id="$CAL_ID" --arg confirm=true
-reject "refuse to write to a subscribed calendar" \
-  calendar_create_event --arg calendar="中国大陆节假日" --arg title="x" --arg start="tomorrow 10:00" --arg confirm=true
+
+# Every Mac has at least one read-only container in practice (birthdays, a
+# subscribed calendar, or a shared one), but do not assume which.
+READONLY_CAL="$("$BIN" call calendar_list_calendars 2>/dev/null | python3 -c '
+import json, sys
+try:
+    containers = json.load(sys.stdin)["containers"]
+except Exception:
+    containers = []
+readonly = [c["title"] for c in containers if not c.get("isWritable")]
+print(readonly[0] if readonly else "")
+' 2>/dev/null || true)"
+if [[ -n "$READONLY_CAL" ]]; then
+  reject "refuse to write to a read-only calendar" \
+    calendar_create_event --arg calendar="$READONLY_CAL" --arg title="x" --arg start="tomorrow 10:00" --arg confirm=true
+else
+  printf '  \033[33mskip\033[0m no read-only calendar on this machine\n'
+fi
+
 reject "reminders flagged is unsupported" \
   reminders_create --arg list_id="$LIST_ID" --arg title="x" --arg flagged=true --arg confirm=true
 

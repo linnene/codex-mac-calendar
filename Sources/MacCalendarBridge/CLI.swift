@@ -33,7 +33,7 @@ enum CLI {
       mac-calendar-bridge status
       mac-calendar-bridge call calendars_status --pretty
       mac-calendar-bridge call calendar_list_events --arg range=today --arg calendar='工作'
-      mac-calendar-bridge call calendar_quick_add --arg text='明天下午3点和张伟开会1小时' --arg confirm=true
+      mac-calendar-bridge call calendar_quick_add --arg text='明天下午3点和设计组评审1小时' --arg confirm=true
       echo '{"range":"this_week"}' | mac-calendar-bridge call calendar_agenda - --pretty
     """
 

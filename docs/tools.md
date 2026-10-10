@@ -323,7 +323,7 @@ Copy an event, optionally shifted in time or into another calendar. Useful for '
 
 ## `calendar_quick_add`
 
-Create an event from a phrase such as '明天下午3点和张伟开会1小时' or 'lunch with Ana next tuesday 12:30 for 90 minutes'. The date, duration, and title are parsed and echoed back under 'parsed' so the interpretation can be checked. Always show the parsed result to the user.
+Create an event from a phrase such as '明天下午3点和设计组评审1小时' or 'lunch with Ana next tuesday 12:30 for 90 minutes'. The date, duration, and title are parsed and echoed back under 'parsed' so the interpretation can be checked. Always show the parsed result to the user.
 
 | Argument | Type | Required | Description |
 | --- | --- | --- | --- |
