@@ -1,0 +1,7 @@
+# build output
+plugins/mac-calendar/bin/
+*.o
+*.dSYM/
+
+# macOS
+.DS_Store

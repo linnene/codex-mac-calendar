@@ -1,0 +1,32 @@
+{
+  "mcpServers": {
+    "mac_calendar": {
+      "command": "./bin/mac-calendar-bridge",
+      "args": ["mcp"],
+      "cwd": ".",
+      "env_vars": [
+        "MAC_CALENDAR_WRITE_MODE",
+        "MAC_CALENDAR_MAX_BODY_CHARS",
+        "MAC_CALENDAR_DEFAULT_LIMIT",
+        "MAC_CALENDAR_MAX_LIMIT",
+        "HOME",
+        "PATH"
+      ],
+      "startup_timeout_sec": 20,
+      "tool_timeout_sec": 120,
+      "tools": {
+        "calendar_create_calendar": { "approval_mode": "prompt" },
+        "calendar_update_calendar": { "approval_mode": "prompt" },
+        "calendar_delete_calendar": { "approval_mode": "prompt" },
+        "calendars_set_default": { "approval_mode": "prompt" },
+        "reminders_create_list": { "approval_mode": "prompt" },
+        "reminders_update_list": { "approval_mode": "prompt" },
+        "reminders_delete_list": { "approval_mode": "prompt" },
+        "calendar_delete_event": { "approval_mode": "prompt" },
+        "calendar_move_event": { "approval_mode": "prompt" },
+        "reminders_delete": { "approval_mode": "prompt" },
+        "reminders_move": { "approval_mode": "prompt" }
+      }
+    }
+  }
+}

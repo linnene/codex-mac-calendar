@@ -1,0 +1,17 @@
+{
+  "name": "mac-calendar-local",
+  "plugins": [
+    {
+      "name": "mac-calendar",
+      "source": {
+        "source": "local",
+        "path": "./plugins/mac-calendar"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

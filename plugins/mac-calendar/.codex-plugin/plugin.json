@@ -1,0 +1,43 @@
+{
+  "name": "mac-calendar",
+  "version": "0.1.0",
+  "description": "Read, create, and modify the real macOS Calendar and Reminders databases, exposed to Codex as chat-driven tools.",
+  "author": {
+    "name": "a0000",
+    "url": "https://github.com/a0000"
+  },
+  "license": "MIT",
+  "keywords": [
+    "calendar",
+    "reminders",
+    "eventkit",
+    "macos",
+    "schedule",
+    "tasks",
+    "agenda"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Mac Calendar & Reminders",
+    "shortDescription": "Manage this Mac's Calendar and Reminders from chat",
+    "longDescription": "Mac Calendar & Reminders drives the native Calendar and Reminders data on this Mac through EventKit. List and create calendars and reminder lists, rename them, set their colours, create, edit, move, duplicate, and delete events and reminders, attach alerts, recurrence rules, priorities, and links, find free time, surface conflicts, and get a merged agenda of events and due reminders. Dates are accepted in plain language, including Chinese. Every mutating tool previews its effect first and refuses to touch read-only or subscribed calendars.",
+    "developerName": "a0000",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "websiteURL": "https://support.apple.com/guide/calendar/",
+    "privacyPolicyURL": "https://www.apple.com/legal/privacy/",
+    "termsOfServiceURL": "https://www.apple.com/legal/internet-services/terms/site.html",
+    "logo": "./assets/mac-calendar.png",
+    "composerIcon": "./assets/composer-icon.png",
+    "defaultPrompt": [
+      "What does my day look like?",
+      "Add 明天下午3点和张伟开会1小时 to my calendar",
+      "Find an hour free this week for a focus block",
+      "Create a new calendar called Travel in teal",
+      "What reminder lists do I have, and what is overdue?"
+    ],
+    "brandColor": "#FF375F",
+    "screenshots": []
+  }
+}
