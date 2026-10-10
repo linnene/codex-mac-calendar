@@ -239,6 +239,16 @@ extension Store {
 
     // MARK: All-day handling
 
+    /// EventKit anchors an all-day event to the system time zone: it stores local
+    /// midnight regardless of any zone attached to the event. Day boundaries and
+    /// date rendering for all-day items therefore always use the system zone, so a
+    /// requested output `timezone` cannot shift the date or the day count.
+    var allDayCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        return calendar
+    }
+
     /// All-day events are stored with an *inclusive* end at 23:59:59 on the last
     /// day — EventKit snaps whatever end date it is given to the end of the day it
     /// falls in. Some servers hand back an exclusive midnight instead, so both
@@ -254,16 +264,26 @@ extension Store {
         return (startDay, lastDay, max(1, days))
     }
 
-    func allDaySpan(_ event: EKEvent, zone: TimeZone) -> (startDay: Date, lastDay: Date, days: Int) {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = zone
-        return allDaySpan(start: event.safeStart, end: event.safeEnd, calendar: calendar)
+    func allDaySpan(_ event: EKEvent) -> (startDay: Date, lastDay: Date, days: Int) {
+        allDaySpan(start: event.safeStart, end: event.safeEnd, calendar: allDayCalendar)
+    }
+
+    /// The calendar day a user-supplied date refers to, rebuilt as midnight in the
+    /// system zone. `timeZone` only decides how the input was parsed, never which
+    /// day an all-day event lands on.
+    func allDayStart(from parsed: Date, parsedIn zone: TimeZone) -> Date {
+        var source = Calendar(identifier: .gregorian)
+        source.timeZone = zone
+        let day = source.dateComponents([.year, .month, .day], from: parsed)
+        return allDayCalendar.date(from: day) ?? allDayCalendar.startOfDay(for: parsed)
     }
 
     /// End moment EventKit expects for an all-day event covering `days` days from
     /// `startDay`: the last second of the final day.
-    func allDayEnd(from startDay: Date, days: Int, calendar: Calendar) -> Date {
-        let afterLast = calendar.date(byAdding: .day, value: max(1, days), to: startDay) ?? startDay.addingTimeInterval(86_400)
+    func allDayEnd(from startDay: Date, days: Int) -> Date {
+        let calendar = allDayCalendar
+        let afterLast = calendar.date(byAdding: .day, value: max(1, days), to: startDay)
+            ?? startDay.addingTimeInterval(86_400)
         return afterLast.addingTimeInterval(-1)
     }
 
@@ -295,13 +315,13 @@ extension Store {
         if event.isAllDay {
             // For an all-day event the stored end is the last second of the final
             // day, so the useful facts are the inclusive date range and the day
-            // count. Reporting a 1439-minute "duration" for a one-day event would
-            // only be confusing.
-            let span = allDaySpan(start: start, end: end, calendar: calendar)
-            entry["startDate"] = Dates.dateOnly(span.startDay, timeZone: timeZone)
-            entry["endDate"] = Dates.dateOnly(span.lastDay, timeZone: timeZone)
-            entry["startLocal"] = Dates.dateOnly(span.startDay, timeZone: timeZone)
-            entry["endLocal"] = Dates.dateOnly(span.lastDay, timeZone: timeZone)
+            // count. Day boundaries use the system zone because that is the zone
+            // EventKit stores all-day events in.
+            let span = allDaySpan(event)
+            entry["startDate"] = Dates.dateOnly(span.startDay, timeZone: .current)
+            entry["endDate"] = Dates.dateOnly(span.lastDay, timeZone: .current)
+            entry["startLocal"] = Dates.dateOnly(span.startDay, timeZone: .current)
+            entry["endLocal"] = Dates.dateOnly(span.lastDay, timeZone: .current)
             entry["durationDays"] = span.days
             entry["durationMinutes"] = span.days * 1_440
             entry["endIsInclusiveLastDay"] = true
@@ -734,13 +754,17 @@ extension Store {
         let copy = EKEvent(eventStore: store)
         copy.calendar = target
         copy.title = title
-        copy.startDate = newStart
-        copy.endDate = newEnd
-        copy.isAllDay = source.isAllDay
+        // Same ordering rule as everywhere else: isAllDay and timeZone first,
+        // otherwise EventKit rewrites the dates and the copy loses its all-day flag.
+        copy.applySchedule(
+            isAllDay: source.isAllDay,
+            timeZone: source.timeZone,
+            start: newStart,
+            end: newEnd
+        )
         copy.location = source.location
         copy.notes = source.notes
         copy.url = source.url
-        copy.timeZone = source.timeZone
         copy.availability = source.availability
         if let rules = source.recurrenceRules { copy.recurrenceRules = rules }
         if let alarms = source.alarms { copy.alarms = alarms }
@@ -759,6 +783,13 @@ extension Store {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
 
+        // Read every value the schedule assignment will overwrite before touching
+        // anything: EventKit rewrites the dates the moment isAllDay or timeZone
+        // changes, so reading them afterwards would already be too late.
+        let existingZone: TimeZone? = event.timeZone
+        let previousStart: Date? = event.startDate
+        let previousEnd: Date? = event.endDate
+
         var parsedStart: Dates.Parsed?
         if let startText = args.string("start") {
             parsedStart = try Dates.parse(startText, timeZone: zone)
@@ -768,23 +799,25 @@ extension Store {
             parsedEnd = try Dates.parse(endText, timeZone: zone)
         }
         let durationMinutes = args.int("duration_minutes") ?? args.int("durationMinutes")
+        let clearFields = Set(args.strings("clear").map { $0.lowercased() })
 
         // A bare date means an all-day item, which is what Calendar.app does and
         // what this tool documents. Inferred only on create: moving an existing
         // timed event to another day should not silently drop its times.
+        let wantsAllDay: Bool
         if let explicit = args.bool("all_day") ?? args.bool("allDay") {
-            event.isAllDay = explicit
+            wantsAllDay = explicit
         } else if isCreate,
                   let parsedStart,
                   parsedStart.isDateOnly,
                   parsedEnd?.isDateOnly ?? true,
                   durationMinutes == nil {
-            event.isAllDay = true
+            wantsAllDay = true
+        } else {
+            wantsAllDay = event.isAllDay
         }
 
-        var start = parsedStart?.date ?? event.safeStart
-        let previousStart: Date? = event.startDate
-        let previousEnd: Date? = event.endDate
+        let start = parsedStart?.date ?? event.safeStart
 
         var end: Date
         if let given = parsedEnd?.date {
@@ -800,16 +833,17 @@ extension Store {
             end = start.addingTimeInterval(3_600)
         }
 
-        if event.isAllDay {
+        var effectiveStart = start
+        if wantsAllDay {
             // EventKit snaps an all-day end date to the end of the day it falls in,
             // so 'end' names the last day the event covers and is inclusive. Using
             // the timed convention here (start + 1 day) makes every all-day event
             // one day too long.
-            let startDay = calendar.startOfDay(for: start)
+            let startDay = allDayStart(from: start, parsedIn: zone)
             let days: Int
             if let given = parsedEnd?.date {
-                let endDay = calendar.startOfDay(for: given)
-                let span = calendar.dateComponents([.day], from: startDay, to: endDay).day ?? 0
+                let endDay = allDayStart(from: given, parsedIn: zone)
+                let span = allDayCalendar.dateComponents([.day], from: startDay, to: endDay).day ?? 0
                 guard span >= 0 else {
                     throw BridgeError.invalid(
                         "The all-day end date is before the start date.",
@@ -822,32 +856,43 @@ extension Store {
             } else if isCreate {
                 days = 1
             } else {
-                days = allDaySpan(start: event.safeStart, end: event.safeEnd, calendar: calendar).days
+                days = allDaySpan(event).days
             }
-            start = startDay
-            end = allDayEnd(from: startDay, days: days, calendar: calendar)
+            effectiveStart = startDay
+            end = allDayEnd(from: startDay, days: days)
         }
 
-        guard end > start else {
+        guard end > effectiveStart else {
             throw BridgeError.invalid(
                 "The end time must be after the start time.",
-                "start=\(Dates.iso(start, timeZone: zone)) end=\(Dates.iso(end, timeZone: zone))"
+                "start=\(Dates.iso(effectiveStart, timeZone: zone)) end=\(Dates.iso(end, timeZone: zone))"
             )
         }
-        event.startDate = start
-        event.endDate = end
 
+        // Resolve the zone, then let applySchedule decide where it belongs: for an
+        // all-day event it is dropped, which is what keeps the all-day flag intact.
+        var eventZone = existingZone
+        if clearFields.contains("timezone") || clearFields.contains("time_zone") {
+            eventZone = nil
+        }
         if args.has("timezone") || args.has("time_zone") {
             let identifier = args.string("timezone") ?? args.string("time_zone")
             if let identifier, !identifier.isEmpty {
                 guard let parsed = TimeZone(identifier: identifier) else {
                     throw BridgeError.invalid("Unknown time zone '\(identifier)'.", nil)
                 }
-                event.timeZone = parsed
+                eventZone = parsed
             } else {
-                event.timeZone = nil
+                eventZone = nil
             }
         }
+
+        event.applySchedule(
+            isAllDay: wantsAllDay,
+            timeZone: eventZone,
+            start: effectiveStart,
+            end: end
+        )
 
         if isCreate || args.has("location") {
             if let location = args.string("location") {
@@ -886,7 +931,8 @@ extension Store {
             case "url": event.url = nil
             case "alarms": event.alarms = nil
             case "recurrence", "recurrence_rules": event.recurrenceRules = nil
-            case "timezone", "time_zone": event.timeZone = nil
+            // "timezone" is handled above, before the schedule assignment: clearing
+            // it afterwards would undo the ordering applySchedule exists for.
             default:
                 throw BridgeError.invalid(
                     "Cannot clear '\(field)'.",
@@ -1128,14 +1174,14 @@ extension Store {
         }
 
         if allDay {
-            start = calendar.startOfDay(for: start)
+            start = allDayStart(from: start, parsedIn: zone)
         }
 
         let duration = durationMinutes ?? (allDay ? 1_440 : 60)
         let end: Date
         if allDay {
             let days = max(1, Int((Double(duration) / 1_440.0).rounded(.up)))
-            end = allDayEnd(from: start, days: days, calendar: calendar)
+            end = allDayEnd(from: start, days: days)
         } else {
             end = start.addingTimeInterval(Double(duration) * 60)
         }
@@ -1169,9 +1215,12 @@ extension Store {
         let event = EKEvent(eventStore: store)
         event.calendar = target
         event.title = title
-        event.isAllDay = allDay
-        event.startDate = start
-        event.endDate = end
+        event.applySchedule(
+            isAllDay: allDay,
+            timeZone: args.string("timezone").flatMap { TimeZone(identifier: $0) },
+            start: start,
+            end: end
+        )
         if let location = args.string("location") { event.location = location }
         if let notes = args.string("notes") { event.notes = notes }
         if let url = args.string("url"), let parsed = URL(string: url) { event.url = parsed }

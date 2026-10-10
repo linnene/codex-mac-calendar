@@ -175,7 +175,7 @@ echo ""
 echo "== read-only =="
 run "status"                calendars_status
 check "access is ready"     "$TMP/last.json" "d['ready'] is True"
-check "version reported"    "$TMP/last.json" "d['bridge']['version'] == '0.1.2'"
+check "version reported"    "$TMP/last.json" "d['bridge']['version'] == '0.1.3'"
 run "list tools"            calendars_status
 run "list accounts"         calendars_list_accounts
 run "list calendars"        calendar_list_calendars
@@ -359,6 +359,37 @@ run "quick add a bare date" calendar_quick_add \
   --arg calendar_id="$CAL_ID" --arg text="2027-04-20 盘点" --arg confirm=true
 check "bare date becomes all-day"    "$TMP/last.json" "d['event']['allDay'] is True"
 check "bare date is a single day"    "$TMP/last.json" "d['event']['durationDays'] == 1"
+
+echo ""
+echo "== timezone x all-day matrix =="
+# Two regressions live here and neither is reachable by testing time zones and
+# all-day separately. Attaching a time zone to an event used to clear the all-day
+# flag outright, and day boundaries computed in the requested zone used to shift
+# the date. The suite previously passed 'timezone' only from quick_add and
+# 'all_day' only without a zone, which is why both survived.
+matrix_case() { # <label> <zone|-> <start> <end|-> <expected days>
+  local label="$1" zone="$2" start="$3" finish="$4" expected="$5"
+  local -a args
+  args=(--arg calendar_id="$CAL_ID" --arg title="$label" --arg start="$start" --arg all_day=true --arg confirm=true)
+  [[ "$zone" != "-" ]] && args+=(--arg timezone="$zone")
+  [[ "$finish" != "-" ]] && args+=(--arg end="$finish")
+  local expectedEnd="$start"
+  [[ "$finish" != "-" ]] && expectedEnd="$finish"
+
+  run "create: $label" calendar_create_event "${args[@]}"
+  local id; id="$(field "$TMP/last.json" event.id)"
+  check "create: $label" "$TMP/last.json" \
+    "d['event']['allDay'] is True and d['event']['durationDays'] == $expected"
+
+  run "read back: $label" calendar_get_event --arg id="$id"
+  check "read back: $label" "$TMP/last.json" \
+    "d['event']['allDay'] is True and d['event']['durationDays'] == $expected and d['event']['startDate'] == '$start' and d['event']['endDate'] == '$expectedEnd'"
+}
+
+for zone in - Asia/Shanghai UTC America/New_York; do
+  matrix_case "one day $zone" "$zone" 2027-10-05 - 1
+  matrix_case "three days $zone" "$zone" 2027-10-11 2027-10-13 3
+done
 
 echo ""
 echo "== reminders =="

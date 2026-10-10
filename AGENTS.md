@@ -18,8 +18,22 @@ temporary calendar and reminder list, and a `trap` removes both even on failure.
 If you add a test that writes, give it its own temporary container and extend the
 trap — never write into a container the user already had.
 
+When a bug comes from an option that interacts with another option, add a
+**matrix** test rather than the single case that failed. The `timezone` ×
+`allDay`, and the `all_day` × `end`/`duration` combinations each hid a real defect
+that per-option tests could not reach.
+
 ## Invariants that must not regress
 
+- **Every write path that sets an event's schedule goes through
+  `EKEvent.applySchedule(isAllDay:timeZone:start:end:)`.** EventKit rewrites the
+  dates when `isAllDay` or `timeZone` changes, and attaching a time zone to an
+  all-day event makes it drop the all-day flag. Never assign `isAllDay`,
+  `timeZone`, `startDate`, or `endDate` directly on an event; add a parameter to
+  `applySchedule`. Read any pre-existing value before applying the schedule.
+- All-day day boundaries are computed in the **system** time zone and rendered
+  without regard to a requested output `timezone`, because that is the zone
+  EventKit stores all-day events in. Anything else shifts the date.
 - Every mutating tool goes through `writeGuard`. No exceptions, including
   convenience wrappers.
 - No tool writes to a container without checking `allowsContentModifications`,

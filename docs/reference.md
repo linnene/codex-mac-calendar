@@ -141,6 +141,19 @@ mistaken for midnight.
 resolves — useful when a natural-language phrase lands on an unexpected day.
 ## All-day events
 
+An all-day event has no time zone. EventKit anchors it to the system zone and
+stores local midnight, so the `timezone` argument decides how a date string is
+*parsed* but never which day an all-day event lands on, and no zone is stored on
+it. That matters in two directions:
+
+- Attaching a zone to an all-day event makes EventKit drop the all-day flag, and
+the item silently becomes a timed event sitting at midnight. This is why the
+write paths settle `isAllDay` and `timeZone` *before* assigning the dates, and why
+the zone is dropped rather than stored for an all-day event.
+- Day boundaries and the rendered `startDate`/`endDate` are computed in the system
+zone even when the call passes a different `timezone`, so the same event reports
+the same dates however it is read back.
+
 A date-only `start` creates an all-day event, matching Calendar.app. This is
 inferred on create whenever `start` is a bare date, `end` is absent or also a bare
 date, and no `duration_minutes` is given. Passing `all_day: false` forces a timed
@@ -178,6 +191,21 @@ count.
 
 The same rule applies to `calendar_quick_add`, which additionally strips an all-day
 keyword such as `全天` or `all day` out of the title.
+
+## EventKit property ordering
+
+EventKit is stateful about three properties: it rewrites `startDate` and `endDate`
+whenever `isAllDay` or `timeZone` changes, and it clears `isAllDay` when a time
+zone is attached to an all-day event. Assigning them in the wrong order produces
+events that are subtly the wrong kind while still looking plausible.
+
+Every write path therefore goes through
+`EKEvent.applySchedule(isAllDay:timeZone:start:end:)` in
+`EventKitSupport.swift`, which fixes the order as `isAllDay` → `timeZone` → dates
+and drops the zone for all-day events. Never assign those four properties
+directly; add a parameter to `applySchedule` instead. Any code that needs a
+pre-existing value (start, end, or zone) must read it *before* the schedule is
+applied, because EventKit may already have rewritten it.
 
 ## Event duration defaults
 

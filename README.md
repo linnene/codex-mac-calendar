@@ -262,6 +262,11 @@ version.
 `duration_minutes` used to default its end to *now*, which is already in the past.
 Pass `duration_minutes` as a workaround on older versions.
 
+**An all-day event becomes a timed event when `timezone` is passed** — fixed in
+`0.1.3`. Attaching a time zone to an event made EventKit drop the all-day flag,
+and all-day day boundaries were computed in the requested zone rather than the
+system zone. Omit `timezone` as a workaround on older versions.
+
 **Dates land on the wrong day** — run `mac-calendar-bridge parse-date '<text>'` to
 see how the expression resolves, and pass an explicit `timezone` if the machine
 default is not what you meant.
@@ -286,7 +291,7 @@ identifiers only, no calendar content.
 
 ```bash
 ./scripts/build.sh       # build (probes for a usable SDK)
-./scripts/smoke.sh       # 113 end-to-end assertions against real databases
+./scripts/smoke.sh       # 145 end-to-end assertions against real databases
 ./scripts/make-docs.sh   # regenerate docs/tools.md from the schemas
 ./scripts/make-assets.sh # regenerate the icon set
 ```
