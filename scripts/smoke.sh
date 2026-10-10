@@ -262,6 +262,42 @@ run "delete event"  calendar_delete_event --arg id="$DUP_ID" --arg confirm=true
 check "deleted"     "$TMP/last.json" "d['applied'] is True"
 
 echo ""
+echo "== all-day events =="
+run "create single all-day event" calendar_create_event \
+  --arg calendar_id="$CAL_ID" --arg title="Allday one" --arg start=2027-03-01 --arg all_day=true --arg confirm=true
+AL_ID="$(field "$TMP/last.json" event.id)"
+check "single all-day day stays one day" "$TMP/last.json" "d['event']['durationDays'] == 1"
+check "all-day end is the inclusive date"  "$TMP/last.json" "d['event']['endDate'] == '2027-03-01'"
+check "all-day end is not the day after"   "$TMP/last.json" "d['event']['end'] < '2027-03-02'"
+run "create multi-day all-day event" calendar_create_event \
+  --arg calendar_id="$CAL_ID" --arg title="Allday span" --arg start=2027-03-05 --arg end=2027-03-07 --arg all_day=true --arg confirm=true
+check "inclusive range honoured"    "$TMP/last.json" "d['event']['durationDays'] == 3"
+check "inclusive end reported"      "$TMP/last.json" "d['event']['endDate'] == '2027-03-07'"
+run "create all-day by duration" calendar_create_event \
+  --arg calendar_id="$CAL_ID" --arg title="Allday three" --arg start=2027-03-10 --arg duration_minutes=4320 --arg all_day=true --arg confirm=true
+check "duration becomes whole days" "$TMP/last.json" "d['event']['durationDays'] == 3"
+run "read all-day events back" calendar_list_events --arg calendar_id="$CAL_ID" --arg start=2027-02-25 --arg end=2027-03-15
+check "single day survives a round trip" "$TMP/last.json" \
+  "any(e['title'] == 'Allday one' and e['durationDays'] == 1 and e['endDate'] == '2027-03-01' for e in d['events'])"
+check "multi day survives a round trip" "$TMP/last.json" \
+  "any(e['title'] == 'Allday span' and e['durationDays'] == 3 and e['endDate'] == '2027-03-07' for e in d['events'])"
+run "all-day via quick add" calendar_quick_add \
+  --arg calendar_id="$CAL_ID" --arg text="2027-03-20 全天 盘点" --arg timezone=Asia/Shanghai --arg confirm=true
+check "quick add all-day is one day"  "$TMP/last.json" "d['event']['durationDays'] == 1"
+check "quick add strips the keyword"  "$TMP/last.json" "'全天' not in d['event']['title']"
+reject "all-day end before start is refused" calendar_create_event \
+  --arg calendar_id="$CAL_ID" --arg title="bad range" --arg start=2027-03-25 --arg end=2027-03-20 --arg all_day=true --arg confirm=true
+
+run "update all-day in place" calendar_update_event --arg id="$AL_ID" --arg title="Allday one renamed" --arg confirm=true
+check "span kept when only the title changes" "$TMP/last.json" "d['after']['durationDays'] == 1"
+
+run "duplicate all-day event" calendar_duplicate_event --arg id="$AL_ID" --arg offset_minutes=1440 --arg confirm=true
+check "duplicate keeps one day" "$TMP/last.json" "d['event']['durationDays'] == 1"
+check "duplicate moved one day"  "$TMP/last.json" "d['event']['startDate'] == '2027-03-02'"
+
+run "delete all-day events" calendar_delete_event --arg id="$AL_ID" --arg confirm=true
+
+echo ""
 echo "== reminders =="
 run "create reminder" reminders_create --arg list_id="$LIST_ID" --arg title="写周报" \
   --arg due="tomorrow 18:00" --arg priority=high --arg remind_at_minutes=60 --arg notes="smoke test" --arg confirm=true

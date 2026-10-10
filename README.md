@@ -186,7 +186,7 @@ docs/reference.md       full tool and configuration reference
 
 ```bash
 ./scripts/build.sh      # build
-./scripts/smoke.sh      # 67 end-to-end assertions; creates temp containers and removes them
+./scripts/smoke.sh      # 90 end-to-end assertions; creates temp containers and removes them
 ./scripts/smoke.sh --keep        # leave the temp containers for inspection
 ./scripts/smoke.sh --list-only   # read paths only
 ```

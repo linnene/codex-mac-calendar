@@ -140,6 +140,39 @@ mistaken for midnight.
 `mac-calendar-bridge parse-date '<expression>'` shows exactly how an expression
 resolves — useful when a natural-language phrase lands on an unexpected day.
 
+## All-day events
+
+EventKit stores an all-day event with an **inclusive** end: it snaps whatever end
+date it is given to 23:59:59 of the day that date falls in. The timed convention
+(`end = start + 1 day`, exclusive) therefore produces an event one day too long —
+a single-day all-day event silently becomes two days.
+
+This bridge uses one consistent rule instead:
+
+- `end` names the **last day the event covers, inclusive**. Omitting it means a
+  single day, and `end` equal to `start` also means one day.
+- `duration_minutes` is rounded up to whole days (1440 → one day, 4320 → three).
+- On read, all-day events report `startDate` and `endDate` as plain `yyyy-MM-dd`
+  values, plus `durationDays`. `durationMinutes` is `durationDays * 1440`, so a
+  one-day event never reports a puzzling 1439. The raw stored values remain in
+  `start` / `end`, and `endIsInclusiveLastDay: true` marks the convention
+  explicitly.
+
+```jsonc
+{ "title": "Conference", "start": "2026-11-15", "all_day": true }
+// → startDate 2026-11-15, endDate 2026-11-15, durationDays 1
+
+{ "title": "Trip", "start": "2026-11-15", "end": "2026-11-17", "all_day": true }
+// → startDate 2026-11-15, endDate 2026-11-17, durationDays 3
+```
+
+On read the parser also tolerates the opposite convention, so an all-day event
+synced from a server that reports an exclusive midnight still yields the right day
+count.
+
+The same rule applies to `calendar_quick_add`, which additionally strips an all-day
+keyword such as `全天` or `all day` out of the title.
+
 ## Recurrence
 
 ```jsonc

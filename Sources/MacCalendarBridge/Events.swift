@@ -237,12 +237,45 @@ extension Store {
         try specs.map { try alarm($0) }
     }
 
+    // MARK: All-day handling
+
+    /// All-day events are stored with an *inclusive* end at 23:59:59 on the last
+    /// day — EventKit snaps whatever end date it is given to the end of the day it
+    /// falls in. Some servers hand back an exclusive midnight instead, so both
+    /// shapes are normalised to the last included calendar day here.
+    func allDaySpan(start: Date, end: Date, calendar: Calendar) -> (startDay: Date, lastDay: Date, days: Int) {
+        let startDay = calendar.startOfDay(for: start)
+        var last = end
+        if calendar.startOfDay(for: last) == last, last > startDay {
+            last = last.addingTimeInterval(-1)
+        }
+        let lastDay = max(startDay, calendar.startOfDay(for: last))
+        let days = (calendar.dateComponents([.day], from: startDay, to: lastDay).day ?? 0) + 1
+        return (startDay, lastDay, max(1, days))
+    }
+
+    func allDaySpan(_ event: EKEvent, zone: TimeZone) -> (startDay: Date, lastDay: Date, days: Int) {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        return allDaySpan(start: event.safeStart, end: event.safeEnd, calendar: calendar)
+    }
+
+    /// End moment EventKit expects for an all-day event covering `days` days from
+    /// `startDay`: the last second of the final day.
+    func allDayEnd(from startDay: Date, days: Int, calendar: Calendar) -> Date {
+        let afterLast = calendar.date(byAdding: .day, value: max(1, days), to: startDay) ?? startDay.addingTimeInterval(86_400)
+        return afterLast.addingTimeInterval(-1)
+    }
+
     // MARK: Event serialisation
 
     func eventDict(_ event: EKEvent, includeDetails: Bool = true) -> [String: Any] {
         let start = event.safeStart
         let end = event.safeEnd
         let occurrence = event.safeOccurrence
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
 
         var entry: [String: Any] = [
             "id": event.safeIdentifier,
@@ -252,15 +285,31 @@ extension Store {
             "account": event.calendar.source.title,
             "start": Dates.iso(start, timeZone: timeZone),
             "end": Dates.iso(end, timeZone: timeZone),
-            "startLocal": Dates.local(start, timeZone: timeZone),
-            "endLocal": Dates.local(end, timeZone: timeZone),
             "allDay": event.isAllDay,
-            "durationMinutes": Int(end.timeIntervalSince(start) / 60),
             "availability": Self.availabilityName(event.availability),
             "status": Self.statusName(event.status),
             "isRecurring": event.hasRecurrenceRules,
             "isDetached": event.isDetached,
         ]
+
+        if event.isAllDay {
+            // For an all-day event the stored end is the last second of the final
+            // day, so the useful facts are the inclusive date range and the day
+            // count. Reporting a 1439-minute "duration" for a one-day event would
+            // only be confusing.
+            let span = allDaySpan(start: start, end: end, calendar: calendar)
+            entry["startDate"] = Dates.dateOnly(span.startDay, timeZone: timeZone)
+            entry["endDate"] = Dates.dateOnly(span.lastDay, timeZone: timeZone)
+            entry["startLocal"] = Dates.dateOnly(span.startDay, timeZone: timeZone)
+            entry["endLocal"] = Dates.dateOnly(span.lastDay, timeZone: timeZone)
+            entry["durationDays"] = span.days
+            entry["durationMinutes"] = span.days * 1_440
+            entry["endIsInclusiveLastDay"] = true
+        } else {
+            entry["startLocal"] = Dates.local(start, timeZone: timeZone)
+            entry["endLocal"] = Dates.local(end, timeZone: timeZone)
+            entry["durationMinutes"] = Int(end.timeIntervalSince(start) / 60)
+        }
         if let hex = Colors.hex(event.calendar.color) {
             entry["colorHex"] = hex
         } else {
@@ -654,8 +703,9 @@ extension Store {
         } else {
             newStart = source.safeStart.addingTimeInterval(Double(offsetMinutes) * 60)
         }
-        let duration = source.safeEnd.timeIntervalSince(source.safeStart)
-        let newEnd = newStart.addingTimeInterval(duration)
+        // Shift both ends by the same delta so an all-day event keeps its shape
+        // instead of drifting when the offset is not a whole number of days.
+        let newEnd = source.safeEnd.addingTimeInterval(newStart.timeIntervalSince(source.safeStart))
 
         let target: EKCalendar
         if args.has("calendar") || args.has("calendar_id") || args.has("calendarId") {
@@ -710,27 +760,49 @@ extension Store {
             event.isAllDay = args.boolOr("all_day", args.boolOr("allDay", event.isAllDay))
         }
 
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+
         var start = event.safeStart
         if let startText = args.string("start") {
             start = try Dates.parse(startText, timeZone: zone).date
         }
-        var end = event.safeEnd
+
+        let durationMinutes = args.int("duration_minutes") ?? args.int("durationMinutes")
+        var givenEnd: Date?
         if let endText = args.string("end") {
-            end = try Dates.parse(endText, timeZone: zone).date
-        } else if let minutes = args.int("duration_minutes") ?? args.int("durationMinutes") {
-            end = start.addingTimeInterval(Double(minutes) * 60)
+            givenEnd = try Dates.parse(endText, timeZone: zone).date
         }
+        var end = givenEnd
+            ?? durationMinutes.map { start.addingTimeInterval(Double($0) * 60) }
+            ?? event.safeEnd
 
         if event.isAllDay {
-            var calendar = Calendar(identifier: .gregorian)
-            calendar.timeZone = zone
-            let dayStart = calendar.startOfDay(for: start)
-            start = dayStart
-            if args.string("end") == nil {
-                end = dayStart.addingTimeInterval(86_400)
-            } else if end <= start {
-                end = dayStart.addingTimeInterval(86_400)
+            // EventKit snaps an all-day end date to the end of the day it falls in,
+            // so 'end' names the last day the event covers and is inclusive. Using
+            // the timed convention here (start + 1 day) makes every all-day event
+            // one day too long.
+            let startDay = calendar.startOfDay(for: start)
+            let days: Int
+            if let givenEnd {
+                let endDay = calendar.startOfDay(for: givenEnd)
+                let span = calendar.dateComponents([.day], from: startDay, to: endDay).day ?? 0
+                guard span >= 0 else {
+                    throw BridgeError.invalid(
+                        "The all-day end date is before the start date.",
+                        "For an all-day event 'end' names the last day it covers, and may equal 'start' for a single day."
+                    )
+                }
+                days = span + 1
+            } else if let durationMinutes, durationMinutes > 0 {
+                days = max(1, Int((Double(durationMinutes) / 1_440.0).rounded(.up)))
+            } else if isCreate {
+                days = 1
+            } else {
+                days = allDaySpan(start: event.safeStart, end: event.safeEnd, calendar: calendar).days
             }
+            start = startDay
+            end = allDayEnd(from: startDay, days: days, calendar: calendar)
         }
 
         guard end > start else {
@@ -990,8 +1062,12 @@ extension Store {
         }
 
         var allDay = args.boolOr("all_day", false)
-        for keyword in ["全天", "all day", "all-day", "allday"] where text.lowercased().contains(keyword) {
+        let allDayKeywords = ["all-day", "all day", "allday", "全天事件", "全天"]
+        if allDayKeywords.contains(where: { text.lowercased().contains($0) }) {
             allDay = true
+            for keyword in allDayKeywords {
+                remainder = remainder.replacingOccurrences(of: keyword, with: " ", options: [.caseInsensitive])
+            }
         }
 
         var durationMinutes = args.int("duration_minutes")
@@ -1014,7 +1090,13 @@ extension Store {
         }
 
         let duration = durationMinutes ?? (allDay ? 1_440 : 60)
-        let end = start.addingTimeInterval(Double(duration) * 60)
+        let end: Date
+        if allDay {
+            let days = max(1, Int((Double(duration) / 1_440.0).rounded(.up)))
+            end = allDayEnd(from: start, days: days, calendar: calendar)
+        } else {
+            end = start.addingTimeInterval(Double(duration) * 60)
+        }
 
         let cleanedTitle = remainder
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)

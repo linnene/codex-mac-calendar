@@ -74,6 +74,8 @@ private let rangeProperty = enumeration(
 )
 private let startProperty = str("Range start. A date or date-time: '2026-10-10', '2026-10-10T09:00', '+3d', 'tomorrow'.")
 private let endProperty = str("Range end (exclusive). Same formats as 'start'. Defaults to one day after 'start'.")
+private let eventEndProperty = str("End date-time. Defaults to start + duration_minutes, or +1 hour. For an all-day event this names the LAST day the event covers, inclusive: a one-day all-day event needs no 'end', and 'end' equal to 'start' means one day, not zero.")
+private let durationProperty = int("Length in minutes. Rounded up to whole days for an all-day event.", minimum: 1)
 private let limitProperty = int("Maximum number of items to return. Defaults to 50, capped at \(Env.maxLimit).", minimum: 1, maximum: Env.maxLimit)
 private let calendarNameProperty = str("Calendar name, or the special values 'all' or '*'. Names are matched exactly first, then case-insensitively, then as a substring; an ambiguous match is an error rather than a guess.")
 private let calendarIdProperty = str("Exact calendar identifier from calendar_list_calendars. Takes precedence over the name.")
@@ -424,9 +426,9 @@ func toolCatalog() -> [Tool] {
         schema: schema([
             "title": str("Event title."),
             "start": str("Start date-time, e.g. '2026-10-10T15:00', 'tomorrow 15:00', '+2h'."),
-            "end": str("End date-time. Defaults to start + duration_minutes, or +1 hour."),
-            "duration_minutes": int("Length in minutes, used when 'end' is absent.", minimum: 1),
-            "all_day": boolean("Create an all-day event. 'start' is snapped to midnight."),
+            "end": eventEndProperty,
+            "duration_minutes": durationProperty,
+            "all_day": boolean("Create an all-day event. 'start' is snapped to midnight and the event covers whole days; use 'end' to span several days."),
             "calendar": calendarNameProperty,
             "calendar_id": calendarIdProperty,
             "timezone": timeZoneProperty,
@@ -453,9 +455,9 @@ func toolCatalog() -> [Tool] {
             "span": spanProperty,
             "title": str("New title."),
             "start": str("New start."),
-            "end": str("New end."),
-            "duration_minutes": int("New length; recomputes the end from the start.", minimum: 1),
-            "all_day": boolean("Switch between all-day and timed."),
+            "end": eventEndProperty,
+            "duration_minutes": int("New length; recomputes the end from the start. Rounded up to whole days for an all-day event.", minimum: 1),
+            "all_day": boolean("Switch between all-day and timed. An all-day event keeps its day span unless 'end' or 'duration_minutes' is also given."),
             "timezone": timeZoneProperty,
             "location": str("New location. Pass an empty string to clear it."),
             "notes": str("New notes. Pass an empty string to clear them."),
@@ -533,7 +535,7 @@ func toolCatalog() -> [Tool] {
             "calendar_id": calendarIdProperty,
             "timezone": timeZoneProperty,
             "title": str("Override the parsed title."),
-            "duration_minutes": int("Override the parsed duration.", minimum: 1),
+            "duration_minutes": int("Override the parsed duration. For an all-day event this is rounded up to whole days.", minimum: 1),
             "all_day": boolean("Force an all-day event."),
             "location": str("Location to attach."),
             "notes": str("Notes to attach."),
@@ -594,8 +596,8 @@ func toolCatalog() -> [Tool] {
         schema: schema([
             "title": str("Event title."),
             "start": str("Start date-time."),
-            "end": str("End date-time. Defaults to start + duration_minutes, or +1 hour."),
-            "duration_minutes": int("Length in minutes when 'end' is absent.", minimum: 1),
+            "end": eventEndProperty,
+            "duration_minutes": int("Length in minutes when 'end' is absent. Rounded up to whole days for an all-day event.", minimum: 1),
             "all_day": boolean("All-day event."),
             "timezone": timeZoneProperty,
             "location": str("Location."),

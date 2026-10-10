@@ -237,14 +237,14 @@ Create a calendar event. Give 'start' plus either 'end' or 'duration_minutes'; w
 | Argument | Type | Required | Description |
 | --- | --- | --- | --- |
 | `alarms` | array of object | no | Reminder offsets for the item. Each entry is {"minutes_before": 15} (relative), {"at": "2026-10-10T09:00"} (absolute), or {"location": {"title": "Office", "latitude": 31.23, "longitude": 121.47, "radius": 150, "on": "enter"}} (geofence). Passing the array replaces all existing alarms; pass an empty array to remove them. |
-| `all_day` | boolean | no | Create an all-day event. 'start' is snapped to midnight. |
+| `all_day` | boolean | no | Create an all-day event. 'start' is snapped to midnight and the event covers whole days; use 'end' to span several days. |
 | `availability` | string | no | Free/busy status. One of: `busy`, `free`, `tentative`, `unavailable`. |
 | `calendar` | string | no | Calendar name, or the special values 'all' or '*'. Names are matched exactly first, then case-insensitively, then as a substring; an ambiguous match is an error rather than a guess. |
 | `calendar_id` | string | no | Exact calendar identifier from calendar_list_calendars. Takes precedence over the name. |
 | `confirm` | boolean | no | Must be true to actually apply a change while write mode is 'ask' (the default). Without it, mutating tools return a preview and write nothing. |
 | `dry_run` | boolean | no | Preview only. Never writes, in any write mode. |
-| `duration_minutes` | integer | no | Length in minutes, used when 'end' is absent. |
-| `end` | string | no | End date-time. Defaults to start + duration_minutes, or +1 hour. |
+| `duration_minutes` | integer | no | Length in minutes. Rounded up to whole days for an all-day event. |
+| `end` | string | no | End date-time. Defaults to start + duration_minutes, or +1 hour. For an all-day event this names the LAST day the event covers, inclusive: a one-day all-day event needs no 'end', and 'end' equal to 'start' means one day, not zero. |
 | `location` | string | no | Free-text location. |
 | `notes` | string | no | Free-text notes. |
 | `recurrence` | array of object | no | Recurrence rule. Passing this array replaces the existing rules; pass an empty array to make the item non-recurring. |
@@ -260,13 +260,13 @@ Change fields on an existing event. Only the fields you pass are modified. For a
 | Argument | Type | Required | Description |
 | --- | --- | --- | --- |
 | `alarms` | array of object | no | Reminder offsets for the item. Each entry is {"minutes_before": 15} (relative), {"at": "2026-10-10T09:00"} (absolute), or {"location": {"title": "Office", "latitude": 31.23, "longitude": 121.47, "radius": 150, "on": "enter"}} (geofence). Passing the array replaces all existing alarms; pass an empty array to remove them. |
-| `all_day` | boolean | no | Switch between all-day and timed. |
+| `all_day` | boolean | no | Switch between all-day and timed. An all-day event keeps its day span unless 'end' or 'duration_minutes' is also given. |
 | `availability` | string | no | Free/busy status. One of: `busy`, `free`, `tentative`, `unavailable`. |
 | `clear` | array of string | no | Field names to reset to empty: notes, location, url, alarms, recurrence, timezone (events) or notes, url, location, due, start, alarms, recurrence (reminders). |
 | `confirm` | boolean | no | Must be true to actually apply a change while write mode is 'ask' (the default). Without it, mutating tools return a preview and write nothing. |
 | `dry_run` | boolean | no | Preview only. Never writes, in any write mode. |
-| `duration_minutes` | integer | no | New length; recomputes the end from the start. |
-| `end` | string | no | New end. |
+| `duration_minutes` | integer | no | New length; recomputes the end from the start. Rounded up to whole days for an all-day event. |
+| `end` | string | no | End date-time. Defaults to start + duration_minutes, or +1 hour. For an all-day event this names the LAST day the event covers, inclusive: a one-day all-day event needs no 'end', and 'end' equal to 'start' means one day, not zero. |
 | `id` | string | yes | Exact item identifier as returned by the list tools. |
 | `location` | string | no | New location. Pass an empty string to clear it. |
 | `notes` | string | no | New notes. Pass an empty string to clear them. |
@@ -333,7 +333,7 @@ Create an event from a phrase such as '明天下午3点和张伟开会1小时' o
 | `calendar_id` | string | no | Exact calendar identifier from calendar_list_calendars. Takes precedence over the name. |
 | `confirm` | boolean | no | Must be true to actually apply a change while write mode is 'ask' (the default). Without it, mutating tools return a preview and write nothing. |
 | `dry_run` | boolean | no | Preview only. Never writes, in any write mode. |
-| `duration_minutes` | integer | no | Override the parsed duration. |
+| `duration_minutes` | integer | no | Override the parsed duration. For an all-day event this is rounded up to whole days. |
 | `location` | string | no | Location to attach. |
 | `notes` | string | no | Notes to attach. |
 | `recurrence` | array of object | no | Recurrence rule. Passing this array replaces the existing rules; pass an empty array to make the item non-recurring. |
@@ -388,8 +388,8 @@ Build a prefilled event and open it in Calendar.app so the user can add invitees
 | `availability` | string | no | Free/busy status. One of: `busy`, `free`, `tentative`, `unavailable`. |
 | `confirm` | boolean | no | Must be true to actually apply a change while write mode is 'ask' (the default). Without it, mutating tools return a preview and write nothing. |
 | `dry_run` | boolean | no | Preview only. Never writes, in any write mode. |
-| `duration_minutes` | integer | no | Length in minutes when 'end' is absent. |
-| `end` | string | no | End date-time. Defaults to start + duration_minutes, or +1 hour. |
+| `duration_minutes` | integer | no | Length in minutes when 'end' is absent. Rounded up to whole days for an all-day event. |
+| `end` | string | no | End date-time. Defaults to start + duration_minutes, or +1 hour. For an all-day event this names the LAST day the event covers, inclusive: a one-day all-day event needs no 'end', and 'end' equal to 'start' means one day, not zero. |
 | `location` | string | no | Location. |
 | `notes` | string | no | Notes. |
 | `start` | string | yes | Start date-time. |

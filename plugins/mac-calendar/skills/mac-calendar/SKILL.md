@@ -77,6 +77,17 @@ declines, stop and ask what they want instead.
   where the duration came from. Show that to the user; it is the cheapest way for
   them to catch a misread phrase.
 
+## All-day events
+
+For an all-day event, `end` is the **last day it covers, inclusive**. Omit `end`
+for a single-day event; `end` equal to `start` also means one day. Never pass
+`start` plus one day to mean a single day — that produces a two-day event.
+
+Read all-day events from `startDate`, `endDate` (both `yyyy-MM-dd`) and
+`durationDays`. Do not compute their length from `start`/`end`; the stored end is
+the last second of the final day, so that arithmetic gives 1439 minutes for a
+one-day event.
+
 ## Recurring items
 
 A recurring series shares one `id` across all its occurrences. To act on a single
