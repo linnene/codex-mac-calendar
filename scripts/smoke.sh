@@ -175,7 +175,7 @@ echo ""
 echo "== read-only =="
 run "status"                calendars_status
 check "access is ready"     "$TMP/last.json" "d['ready'] is True"
-check "version reported"    "$TMP/last.json" "d['bridge']['version'] == '0.1.1'"
+check "version reported"    "$TMP/last.json" "d['bridge']['version'] == '0.1.2'"
 run "list tools"            calendars_status
 run "list accounts"         calendars_list_accounts
 run "list calendars"        calendar_list_calendars
@@ -263,6 +263,7 @@ run "quick add natural language" calendar_quick_add \
   --arg calendar_id="$CAL_ID" --arg text="明天下午3点和设计组评审1小时" --arg timezone=Asia/Shanghai --arg confirm=true
 check "duration parsed from text" "$TMP/last.json" "d['event']['durationMinutes'] == 60"
 check "title parsed from text"    "$TMP/last.json" "d['event']['title'] == '和设计组评审'"
+check "a phrase with a time stays timed" "$TMP/last.json" "d['event']['allDay'] is False"
 QUICK_ID="$(field "$TMP/last.json" event.id)"
 
 run "update event" calendar_update_event --arg id="$QUICK_ID" --arg title="和设计组评审（改）" --arg duration_minutes=90 --arg confirm=true
@@ -312,6 +313,52 @@ check "duplicate keeps one day" "$TMP/last.json" "d['event']['durationDays'] == 
 check "duplicate moved one day"  "$TMP/last.json" "d['event']['startDate'] == '2027-03-02'"
 
 run "delete all-day events" calendar_delete_event --arg id="$AL_ID" --arg confirm=true
+
+echo ""
+echo "== creation defaults and all-day inference =="
+# Regression: a create with a future start and no end/duration used to fail with
+# "The end time must be after the start time" because the end defaulted to now.
+run "future start, no end, no duration" calendar_create_event \
+  --arg calendar_id="$CAL_ID" --arg title="Default hour" --arg start="2027-04-01T14:00" --arg confirm=true
+DEF_ID="$(field "$TMP/last.json" event.id)"
+check "defaults to one hour"     "$TMP/last.json" "d['event']['durationMinutes'] == 60"
+check "stays a timed event"      "$TMP/last.json" "d['event']['allDay'] is False"
+
+# Regression: a date-only start used to create a timed event, so a documented
+# all-day item came back as allDay false with no day fields.
+run "date-only start" calendar_create_event \
+  --arg calendar_id="$CAL_ID" --arg title="Inferred all day" --arg start=2027-04-03 --arg confirm=true
+INFER_ID="$(field "$TMP/last.json" event.id)"
+check "date-only becomes all-day"    "$TMP/last.json" "d['event']['allDay'] is True"
+check "date-only is a single day"    "$TMP/last.json" "d['event']['durationDays'] == 1"
+check "date-only reports startDate"  "$TMP/last.json" "d['event']['startDate'] == '2027-04-03'"
+
+run "read the inferred all-day event back" calendar_get_event --arg id="$INFER_ID"
+check "round trip keeps allDay true"  "$TMP/last.json" "d['event']['allDay'] is True"
+check "round trip keeps the day fields" "$TMP/last.json" \
+  "d['event'].get('durationDays') == 1 and d['event'].get('startDate') == '2027-04-03' and d['event'].get('endDate') == '2027-04-03'"
+
+run "date-only range" calendar_create_event \
+  --arg calendar_id="$CAL_ID" --arg title="Inferred range" --arg start=2027-04-05 --arg end=2027-04-07 --arg confirm=true
+check "date-only range spans three days" "$TMP/last.json" "d['event']['durationDays'] == 3"
+
+run "explicit all_day false overrides inference" calendar_create_event \
+  --arg calendar_id="$CAL_ID" --arg title="Forced timed" --arg start=2027-04-09 --arg all_day=false --arg confirm=true
+check "explicit false stays timed"   "$TMP/last.json" "d['event']['allDay'] is False"
+
+run "move a timed event with start only" calendar_update_event \
+  --arg id="$DEF_ID" --arg start="2027-04-02T09:00" --arg confirm=true
+check "duration survives a move"     "$TMP/last.json" "d['after']['durationMinutes'] == 60"
+check "move does not make it all-day" "$TMP/last.json" "d['after']['allDay'] is False"
+
+run "bare date on update does not infer all-day" calendar_update_event \
+  --arg id="$DEF_ID" --arg start=2027-04-04 --arg confirm=true
+check "update keeps the timed event timed" "$TMP/last.json" "d['after']['allDay'] is False"
+
+run "quick add a bare date" calendar_quick_add \
+  --arg calendar_id="$CAL_ID" --arg text="2027-04-20 盘点" --arg confirm=true
+check "bare date becomes all-day"    "$TMP/last.json" "d['event']['allDay'] is True"
+check "bare date is a single day"    "$TMP/last.json" "d['event']['durationDays'] == 1"
 
 echo ""
 echo "== reminders =="

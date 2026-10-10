@@ -756,26 +756,49 @@ extension Store {
     func applyEventFields(_ event: EKEvent, args: Args, zone: TimeZone, isCreate: Bool) throws {
         if let title = args.string("title"), !title.isEmpty { event.title = title }
 
-        if args.has("all_day") || args.has("allDay") {
-            event.isAllDay = args.boolOr("all_day", args.boolOr("allDay", event.isAllDay))
-        }
-
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
 
-        var start = event.safeStart
+        var parsedStart: Dates.Parsed?
         if let startText = args.string("start") {
-            start = try Dates.parse(startText, timeZone: zone).date
+            parsedStart = try Dates.parse(startText, timeZone: zone)
+        }
+        var parsedEnd: Dates.Parsed?
+        if let endText = args.string("end") {
+            parsedEnd = try Dates.parse(endText, timeZone: zone)
+        }
+        let durationMinutes = args.int("duration_minutes") ?? args.int("durationMinutes")
+
+        // A bare date means an all-day item, which is what Calendar.app does and
+        // what this tool documents. Inferred only on create: moving an existing
+        // timed event to another day should not silently drop its times.
+        if let explicit = args.bool("all_day") ?? args.bool("allDay") {
+            event.isAllDay = explicit
+        } else if isCreate,
+                  let parsedStart,
+                  parsedStart.isDateOnly,
+                  parsedEnd?.isDateOnly ?? true,
+                  durationMinutes == nil {
+            event.isAllDay = true
         }
 
-        let durationMinutes = args.int("duration_minutes") ?? args.int("durationMinutes")
-        var givenEnd: Date?
-        if let endText = args.string("end") {
-            givenEnd = try Dates.parse(endText, timeZone: zone).date
+        var start = parsedStart?.date ?? event.safeStart
+        let previousStart: Date? = event.startDate
+        let previousEnd: Date? = event.endDate
+
+        var end: Date
+        if let given = parsedEnd?.date {
+            end = given
+        } else if let durationMinutes {
+            end = start.addingTimeInterval(Double(durationMinutes) * 60)
+        } else if let previousStart, let previousEnd {
+            // No end given and the event already exists: keep its original length
+            // so moving the start does not turn it into a zero-length event.
+            end = start.addingTimeInterval(previousEnd.timeIntervalSince(previousStart))
+        } else {
+            // New event with no end and no duration: one hour, as documented.
+            end = start.addingTimeInterval(3_600)
         }
-        var end = givenEnd
-            ?? durationMinutes.map { start.addingTimeInterval(Double($0) * 60) }
-            ?? event.safeEnd
 
         if event.isAllDay {
             // EventKit snaps an all-day end date to the end of the day it falls in,
@@ -784,8 +807,8 @@ extension Store {
             // one day too long.
             let startDay = calendar.startOfDay(for: start)
             let days: Int
-            if let givenEnd {
-                let endDay = calendar.startOfDay(for: givenEnd)
+            if let given = parsedEnd?.date {
+                let endDay = calendar.startOfDay(for: given)
                 let span = calendar.dateComponents([.day], from: startDay, to: endDay).day ?? 0
                 guard span >= 0 else {
                     throw BridgeError.invalid(
@@ -1070,6 +1093,16 @@ extension Store {
             }
         }
 
+        /// A phrase with no time of day means the whole day, matching how
+        /// Calendar.app reads a bare date.
+        func mentionsTimeOfDay(_ value: String) -> Bool {
+            if value.range(of: #"\d{1,2}\s*[:：]\s*\d{2}"#, options: .regularExpression) != nil { return true }
+            if value.range(of: #"\d{1,2}\s*(点|时)"#, options: .regularExpression) != nil { return true }
+            let lowered = value.lowercased()
+            return ["am", "pm", "早上", "上午", "中午", "下午", "晚上", "傍晚"]
+                .contains { lowered.contains($0) }
+        }
+
         var durationMinutes = args.int("duration_minutes")
         if durationMinutes == nil,
            let match = Dates.firstMatch(#"(\d+(?:\.\d+)?)\s*(?:个)?\s*(minutes?|mins?|m|hours?|hrs?|h|小时|分钟)"#, in: remainder),
@@ -1085,6 +1118,15 @@ extension Store {
 
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
+
+        if args.bool("all_day") == nil,
+           !allDay,
+           durationMinutes == nil,
+           let matched = matchedText,
+           !mentionsTimeOfDay(matched) {
+            allDay = true
+        }
+
         if allDay {
             start = calendar.startOfDay(for: start)
         }

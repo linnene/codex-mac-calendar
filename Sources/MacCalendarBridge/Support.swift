@@ -67,7 +67,7 @@ enum Env {
         Int(environment["MAC_CALENDAR_MAX_LIMIT"] ?? "") ?? 500
     }
 
-    static var bridgeVersion: String { "0.1.1" }
+    static var bridgeVersion: String { "0.1.2" }
 }
 
 // MARK: - Argument access

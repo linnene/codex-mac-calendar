@@ -139,8 +139,14 @@ mistaken for midnight.
 
 `mac-calendar-bridge parse-date '<expression>'` shows exactly how an expression
 resolves — useful when a natural-language phrase lands on an unexpected day.
-
 ## All-day events
+
+A date-only `start` creates an all-day event, matching Calendar.app. This is
+inferred on create whenever `start` is a bare date, `end` is absent or also a bare
+date, and no `duration_minutes` is given. Passing `all_day: false` forces a timed
+event instead, and `calendar_quick_add` applies the same rule to a phrase with no
+time of day. Updates never infer: a bare date on `calendar_update_event` leaves an
+existing timed event timed.
 
 EventKit stores an all-day event with an **inclusive** end: it snaps whatever end
 date it is given to 23:59:59 of the day that date falls in. The timed convention
@@ -172,6 +178,13 @@ count.
 
 The same rule applies to `calendar_quick_add`, which additionally strips an all-day
 keyword such as `全天` or `all day` out of the title.
+
+## Event duration defaults
+
+With neither `end` nor `duration_minutes`: a new event lasts one hour, and moving
+an existing event's `start` keeps its original length. The second case matters
+because the alternative — leaving the stored end where it was — would make a
+forward move overlap itself or fail the end-after-start check.
 
 ## Recurrence
 

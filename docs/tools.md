@@ -232,12 +232,12 @@ Fetch a single event with full detail: notes, URL, location, alarms, recurrence,
 
 ## `calendar_create_event`
 
-Create a calendar event. Give 'start' plus either 'end' or 'duration_minutes'; when neither end nor duration is given the default is one hour. The target calendar must be writable.
+Create a calendar event. Give 'start' plus either 'end' or 'duration_minutes'; with neither, the event lasts one hour. A date-only 'start' with no duration creates an all-day event, matching Calendar.app — pass a time of day to get a timed event. The target calendar must be writable.
 
 | Argument | Type | Required | Description |
 | --- | --- | --- | --- |
 | `alarms` | array of object | no | Reminder offsets for the item. Each entry is {"minutes_before": 15} (relative), {"at": "2026-10-10T09:00"} (absolute), or {"location": {"title": "Office", "latitude": 31.23, "longitude": 121.47, "radius": 150, "on": "enter"}} (geofence). Passing the array replaces all existing alarms; pass an empty array to remove them. |
-| `all_day` | boolean | no | Create an all-day event. 'start' is snapped to midnight and the event covers whole days; use 'end' to span several days. |
+| `all_day` | boolean | no | Create an all-day event. Inferred when 'start' is a bare date and no duration is given; pass false to force a timed event. |
 | `availability` | string | no | Free/busy status. One of: `busy`, `free`, `tentative`, `unavailable`. |
 | `calendar` | string | no | Calendar name, or the special values 'all' or '*'. Names are matched exactly first, then case-insensitively, then as a substring; an ambiguous match is an error rather than a guess. |
 | `calendar_id` | string | no | Exact calendar identifier from calendar_list_calendars. Takes precedence over the name. |
@@ -255,7 +255,7 @@ Create a calendar event. Give 'start' plus either 'end' or 'duration_minutes'; w
 
 ## `calendar_update_event`
 
-Change fields on an existing event. Only the fields you pass are modified. For a recurring series, pass 'occurrence_date' to pick the occurrence and 'span' to choose how much of the series changes.
+Change fields on an existing event. Only the fields you pass are modified. Moving 'start' without giving 'end' or 'duration_minutes' keeps the original length. A bare date here never converts a timed event to all-day — pass 'all_day' explicitly. For a recurring series, pass 'occurrence_date' to pick the occurrence and 'span' to choose how much of the series changes.
 
 | Argument | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -323,7 +323,7 @@ Copy an event, optionally shifted in time or into another calendar. Useful for '
 
 ## `calendar_quick_add`
 
-Create an event from a phrase such as '明天下午3点和设计组评审1小时' or 'lunch with Ana next tuesday 12:30 for 90 minutes'. The date, duration, and title are parsed and echoed back under 'parsed' so the interpretation can be checked. Always show the parsed result to the user.
+Create an event from a phrase such as '明天下午3点和设计组评审1小时' or 'lunch with Ana next tuesday 12:30 for 90 minutes'. A phrase with no time of day ('明天 盘点') becomes an all-day event, as does an explicit 全天 / all day keyword. The date, duration, and title are parsed and echoed back under 'parsed' so the interpretation can be checked. Always show the parsed result to the user.
 
 | Argument | Type | Required | Description |
 | --- | --- | --- | --- |

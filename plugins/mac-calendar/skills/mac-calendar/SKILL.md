@@ -71,8 +71,10 @@ declines, stop and ask what they want instead.
 - Output always carries `iso`, a human `local` form with weekday, and the time
   zone. Read the `local` value back to the user instead of reformatting it
   yourself.
-- A date-only value (`2026-10-10`) becomes an all-day item. Pass an explicit time
-  when a time matters.
+- A date-only value (`2026-10-10`) becomes an all-day item when creating. Pass an
+  explicit time when a time matters. On update, a bare date never converts an
+  existing timed event to all-day — say `all_day: true` when you mean it.
+- With neither `end` nor `duration_minutes`, a created event lasts one hour.
 - `calendar_quick_add` returns a `parsed` block with the date text it matched and
   where the duration came from. Show that to the user; it is the cheapest way for
   them to catch a misread phrase.

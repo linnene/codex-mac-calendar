@@ -248,9 +248,19 @@ Tools ships SDKs that do not always match the installed `swiftc`.
 `scripts/build.sh` probes for a working pairing automatically; override it with
 `MAC_CALENDAR_SDK=/path/to/MacOSX.sdk ./scripts/build.sh`.
 
-**An all-day event covers one day too many** — this was a real bug in versions
-before `0.1.1`. EventKit snaps an all-day end date to the end of the day it falls
-in, so `end` is the *inclusive* last day. Update to the current version.
+**An all-day event covers one day too many** — fixed in `0.1.1`. EventKit snaps an
+all-day end date to the end of the day it falls in, so `end` is the *inclusive*
+last day. Update to the current version.
+
+**An all-day event comes back as `allDay: false` with no `startDate`/`durationDays`**
+— fixed in `0.1.2`. A date-only `start` used to create a timed event despite the
+shape of the result, so the item existed but was not all-day. Update to the current
+version.
+
+**`calendar_create_event` fails with "The end time must be after the start time"**
+— fixed in `0.1.2`. A create with a future `start` and neither `end` nor
+`duration_minutes` used to default its end to *now*, which is already in the past.
+Pass `duration_minutes` as a workaround on older versions.
 
 **Dates land on the wrong day** — run `mac-calendar-bridge parse-date '<text>'` to
 see how the expression resolves, and pass an explicit `timezone` if the machine
@@ -276,7 +286,7 @@ identifiers only, no calendar content.
 
 ```bash
 ./scripts/build.sh       # build (probes for a usable SDK)
-./scripts/smoke.sh       # 90 end-to-end assertions against real databases
+./scripts/smoke.sh       # 113 end-to-end assertions against real databases
 ./scripts/make-docs.sh   # regenerate docs/tools.md from the schemas
 ./scripts/make-assets.sh # regenerate the icon set
 ```
