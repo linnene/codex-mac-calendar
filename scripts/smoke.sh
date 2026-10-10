@@ -120,6 +120,58 @@ sys.exit(0 if (d.get("applied") is False or d.get("ok") is False) else 1)' "$TMP
   fi
 }
 
+echo "== MCP transport =="
+if python3 - "$BIN" <<'PY'
+import json
+import select
+import subprocess
+import sys
+
+request = (
+    json.dumps({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {"name": "smoke", "version": "1"},
+        },
+    })
+    + "\n"
+).encode()
+
+process = subprocess.Popen(
+    [sys.argv[1], "mcp"],
+    stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+)
+try:
+    process.stdin.write(request)
+    process.stdin.flush()
+    if not select.select([process.stdout], [], [], 3)[0]:
+        raise RuntimeError("initialize timed out while stdin remained open")
+    response = json.loads(process.stdout.readline())
+    if response.get("id") != 1 or "result" not in response:
+        raise RuntimeError(f"unexpected initialize response: {response}")
+finally:
+    process.terminate()
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+PY
+then
+  printf '  \033[32mok\033[0m   initialize responds while stdin remains open\n'
+  pass=$((pass + 1))
+else
+  printf '  \033[31mFAIL\033[0m initialize responds while stdin remains open\n'
+  fail=$((fail + 1))
+fi
+
+echo ""
 echo "== read-only =="
 run "status"                calendars_status
 check "access is ready"     "$TMP/last.json" "d['ready'] is True"

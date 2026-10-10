@@ -52,13 +52,13 @@ enum MCP {
         }
 
         while true {
-            let chunk: Data?
-            do {
-                chunk = try input.read(upToCount: 65_536)
-            } catch {
-                break
-            }
-            guard let chunk, !chunk.isEmpty else { break }
+            // `read(upToCount:)` may wait for either the requested byte count or
+            // EOF on a pipe. MCP clients keep stdin open for the lifetime of the
+            // session, so that behaviour deadlocks the initialize handshake for
+            // normal short JSON-RPC messages. `availableData` waits for at least
+            // one byte, then returns the bytes currently available.
+            let chunk = input.availableData
+            guard !chunk.isEmpty else { break }
             buffer.append(chunk)
 
             while let newline = buffer.firstIndex(of: 0x0A) {
